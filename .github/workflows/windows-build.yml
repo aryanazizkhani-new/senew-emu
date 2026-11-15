@@ -1,0 +1,144 @@
+
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QEMU_VERSION: "10.2.2"
+  QEMU_SHA256: "784b296ff29c1417aa72323abcb2d2ea9ab9771724f577dcd785c3b04f21e176"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-pixman
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-zlib
+
+      - name: Download QEMU
+        shell: msys2 {0}
+        run: |
+          curl -fL --retry 3 \
+            -o qemu.tar.xz \
+            "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz"
+
+          echo "$QEMU_SHA256  qemu.tar.xz" | sha256sum -c -
+
+      - name: Extract and patch QEMU
+        shell: msys2 {0}
+        run: |
+          tar -xf qemu.tar.xz
+
+          SRC="$PWD/qemu-${QEMU_VERSION}"
+
+          cp qemu/hw/arm/w580.c "$SRC/hw/arm/"
+          cp qemu/hw/arm/*.inc "$SRC/hw/arm/"
+
+          grep -Fq "arm_ss.add(files('w580.c'))" \
+            "$SRC/hw/arm/meson.build" || \
+            echo "arm_ss.add(files('w580.c'))" \
+            >> "$SRC/hw/arm/meson.build"
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          SRC="$PWD/qemu-${QEMU_VERSION}"
+
+          mkdir build
+          cd build
+
+          ../qemu-${QEMU_VERSION}/configure \
+            --target-list=arm-softmmu \
+            --disable-docs \
+            --disable-werror \
+            --disable-guest-agent \
+            --disable-tools \
+            --disable-user \
+            --disable-sdl \
+            --disable-gtk \
+            --disable-opengl \
+            --disable-vnc \
+            --disable-slirp \
+            --disable-capstone \
+            --disable-plugins \
+            --without-default-devices \
+            --audio-drv-list= \
+            --disable-kvm \
+            --disable-xen \
+            --disable-curl \
+            --disable-gnutls \
+            --disable-curses \
+            --disable-libusb \
+            --disable-usb-redir \
+            --disable-vhost-user \
+            --disable-vhost-net \
+            --disable-vhost-kernel \
+            --disable-libssh \
+            --disable-spice \
+            --disable-png \
+            --disable-vde \
+            --disable-brlapi \
+            --disable-zstd \
+            --disable-debug-info
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          ninja -C build -j2 qemu-system-arm.exe
+
+      - name: Test W580 machine
+        shell: msys2 {0}
+        run: |
+          ./build/qemu-system-arm.exe --version
+          ./build/qemu-system-arm.exe -M w580,help
+
+      - name: Package Windows executable
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist
+
+          cp build/qemu-system-arm.exe dist/
+
+          ldd build/qemu-system-arm.exe \
+            | sed -nE 's/.*=> ([^ ]+).*/\1/p' \
+            | while read -r dll; do
+                case "$dll" in
+                  /mingw64/bin/*)
+                    cp -n "$dll" dist/
+                    ;;
+                esac
+              done
+
+          cp LICENSE NOTICE dist/
+
+          cd dist
+          7z a ../senew-emu-windows-x64.zip *
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: senew-emu-windows-x64
+          path: senew-emu-windows-x64.zip
+          retention-days: 14

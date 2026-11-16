@@ -143,12 +143,11 @@ jobs:
           unset PKG_CONFIG_PATH
 
           cd build/qemu-10.2.2
-          ninja -C build -v
+
+          ninja -C build -v qemu-system-arm.exe
 
       - name: Check executable
         run: |
-          find build/qemu-10.2.2 -name "qemu-system-arm.exe" -print
-
           test -f build/qemu-10.2.2/build/qemu-system-arm.exe
 
           build/qemu-10.2.2/build/qemu-system-arm.exe --version

@@ -49,22 +49,17 @@ jobs:
           echo "MSYSTEM=$MSYSTEM"
           echo "$PATH"
 
-          echo "=== Tools ==="
+          echo "=== Compiler ==="
           which gcc
-          which cc
+          which g++
           which ld
-          which pkg-config
 
           gcc --version
-          gcc -print-prog-name=ld
+          g++ --version
 
           echo "=== GLib ==="
           pkg-config --libs glib-2.0
           pkg-config --libs gio-2.0
-
-          echo "=== Mount ==="
-          pkg-config --modversion mount || true
-          pkg-config --libs mount || true
 
       - name: Download QEMU
         run: |
@@ -87,8 +82,6 @@ jobs:
           cp qemu/hw/arm/w580.c build/qemu-10.2.2/hw/arm/
           cp qemu/hw/arm/*.inc build/qemu-10.2.2/hw/arm/
 
-          echo "Adding W580 machine to QEMU..."
-
           grep -q "w580.c" build/qemu-10.2.2/hw/arm/meson.build || \
             echo "system_ss.add(when: 'CONFIG_W580', if_true: files('w580.c'))" \
             >> build/qemu-10.2.2/hw/arm/meson.build
@@ -96,12 +89,13 @@ jobs:
       - name: Configure QEMU
         run: |
           export PATH="/ucrt64/bin:/usr/bin"
-          export CC=/ucrt64/bin/gcc
-          export CXX=/ucrt64/bin/g++
-          export AR=/ucrt64/bin/ar
-          export NM=/ucrt64/bin/nm
-          export STRIP=/ucrt64/bin/strip
-          export PKG_CONFIG=/ucrt64/bin/pkg-config
+
+          export CC=gcc
+          export CXX=g++
+          export AR=ar
+          export NM=nm
+          export STRIP=strip
+          export PKG_CONFIG=pkg-config
           export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
           unset PKG_CONFIG_PATH
 
@@ -125,9 +119,9 @@ jobs:
       - name: Build QEMU
         run: |
           export PATH="/ucrt64/bin:/usr/bin"
-          export CC=/ucrt64/bin/gcc
-          export CXX=/ucrt64/bin/g++
-          export PKG_CONFIG=/ucrt64/bin/pkg-config
+          export CC=gcc
+          export CXX=g++
+          export PKG_CONFIG=pkg-config
           export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
           unset PKG_CONFIG_PATH
 
@@ -144,7 +138,6 @@ jobs:
         run: |
           mkdir -p package
           cp build/qemu-10.2.2/build/qemu-system-arm.exe package/
-
           cp /ucrt64/bin/*.dll package/ || true
 
           cd package

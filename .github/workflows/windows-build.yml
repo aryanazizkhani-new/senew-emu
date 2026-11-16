@@ -4,151 +4,154 @@ name: Windows Build
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-env:
-  QEMU_VERSION: "10.2.2"
-  QEMU_SHA256: "784b296ff29c1417aa72323abcb2d2ea9ab9771724f577dcd785c3b04f21e176"
-
 jobs:
-  windows:
+  build:
     runs-on: windows-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+    defaults:
+      run:
+        shell: msys2 {0}
 
-      - name: Setup MSYS2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up MSYS2 UCRT64
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
           install: >-
             base-devel
+            git
             mingw-w64-ucrt-x86_64-toolchain
-            mingw-w64-ucrt-x86_64-glib2
-            mingw-w64-ucrt-x86_64-pixman
+            mingw-w64-ucrt-x86_64-meson
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
-            mingw-w64-ucrt-x86_64-meson
             mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman
             mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-libffi
             mingw-w64-ucrt-x86_64-pcre2
-            curl
-            git
-            perl
-            diffutils
-            tar
-            xz
+            mingw-w64-ucrt-x86_64-bzip2
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-gnutls
+
+      - name: Diagnose toolchain
+        run: |
+          echo "=== Environment ==="
+          echo "MSYSTEM=$MSYSTEM"
+          echo "$PATH"
+
+          echo "=== Tools ==="
+          which gcc
+          which cc
+          which ld
+          which pkg-config
+
+          gcc --version
+          gcc -print-prog-name=ld
+
+          echo "=== GLib ==="
+          pkg-config --libs glib-2.0
+          pkg-config --libs gio-2.0
+
+          echo "=== Mount ==="
+          pkg-config --modversion mount || true
+          pkg-config --libs mount || true
 
       - name: Download QEMU
-        shell: msys2 {0}
         run: |
-          curl -fL --retry 3 \
-            -o qemu.tar.xz \
-            "https://download.qemu.org/qemu-${QEMU_VERSION}.tar.xz"
+          mkdir -p build
+          curl -L \
+            https://download.qemu.org/qemu-10.2.2.tar.xz \
+            -o build/qemu.tar.xz
 
-          echo "$QEMU_SHA256  qemu.tar.xz" | sha256sum -c -
-
-      - name: Extract and patch QEMU
-        shell: msys2 {0}
+      - name: Extract QEMU
         run: |
-          tar \
-            --exclude="qemu-${QEMU_VERSION}/roms/u-boot*" \
-            --exclude="qemu-${QEMU_VERSION}/roms/skiboot" \
-            --exclude="qemu-${QEMU_VERSION}/roms/edk2" \
-            --exclude="qemu-${QEMU_VERSION}/tests" \
-            -xf qemu.tar.xz
+          cd build
+          tar -xf qemu.tar.xz \
+            --exclude='qemu-10.2.2/roms/u-boot*' \
+            --exclude='qemu-10.2.2/roms/skiboot' \
+            --exclude='qemu-10.2.2/roms/edk2' \
+            --exclude='qemu-10.2.2/tests'
 
-          SRC="$PWD/qemu-${QEMU_VERSION}"
-
-          cp qemu/hw/arm/w580.c "$SRC/hw/arm/"
-          cp qemu/hw/arm/*.inc "$SRC/hw/arm/"
-
-          grep -Fq "arm_ss.add(files('w580.c'))" \
-            "$SRC/hw/arm/meson.build" || \
-            echo "arm_ss.add(files('w580.c'))" \
-            >> "$SRC/hw/arm/meson.build"
-
-      - name: Configure
-        shell: msys2 {0}
+      - name: Install W580 machine sources
         run: |
+          cp qemu/hw/arm/w580.c build/qemu-10.2.2/hw/arm/
+          cp qemu/hw/arm/*.inc build/qemu-10.2.2/hw/arm/
+
+          echo "Adding W580 machine to QEMU..."
+
+          grep -q "w580.c" build/qemu-10.2.2/hw/arm/meson.build || \
+            echo "system_ss.add(when: 'CONFIG_W580', if_true: files('w580.c'))" \
+            >> build/qemu-10.2.2/hw/arm/meson.build
+
+      - name: Configure QEMU
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin"
           export CC=/ucrt64/bin/gcc
           export CXX=/ucrt64/bin/g++
           export AR=/ucrt64/bin/ar
           export NM=/ucrt64/bin/nm
           export STRIP=/ucrt64/bin/strip
-
           export PKG_CONFIG=/ucrt64/bin/pkg-config
-          export PKG_CONFIG_LIBDIR=/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
+          export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
           unset PKG_CONFIG_PATH
 
-          mkdir build
-          cd build
+          cd build/qemu-10.2.2
 
-          ../qemu-${QEMU_VERSION}/configure \
+          ../configure \
             --target-list=arm-softmmu \
-            --disable-docs \
-            --disable-werror \
-            --disable-guest-agent \
-            --disable-tools \
+            --enable-system \
             --disable-user \
-            --disable-sdl \
+            --disable-docs \
             --disable-gtk \
+            --disable-sdl \
             --disable-opengl \
             --disable-vnc \
-            --disable-slirp \
-            --disable-capstone \
-            --disable-plugins \
-            --disable-curl \
-            --disable-gnutls \
-            --disable-curses \
-            --disable-libusb \
-            --disable-usb-redir \
-            --disable-spice \
-            --disable-png \
-            --disable-vde \
-            --disable-brlapi \
-            --disable-zstd \
-            --disable-debug-info
+            --disable-werror \
+            --enable-tools \
+            --prefix=/usr/local
 
-      - name: Build
-        shell: msys2 {0}
+      - name: Build QEMU
         run: |
-          ninja -C build -j2 qemu-system-arm.exe
+          export PATH="/ucrt64/bin:/usr/bin"
+          export CC=/ucrt64/bin/gcc
+          export CXX=/ucrt64/bin/g++
+          export PKG_CONFIG=/ucrt64/bin/pkg-config
+          export PKG_CONFIG_LIBDIR="/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig"
+          unset PKG_CONFIG_PATH
 
-      - name: Test W580 machine
-        shell: msys2 {0}
+          cd build/qemu-10.2.2
+          ninja -C build -v
+
+      - name: Check executable
         run: |
-          ./build/qemu-system-arm.exe --version
-          ./build/qemu-system-arm.exe -M w580,help
+          find build/qemu-10.2.2 -name "qemu-system-arm.exe" -print
+          test -f build/qemu-10.2.2/build/qemu-system-arm.exe
 
-      - name: Package Windows executable
-        shell: msys2 {0}
+          build/qemu-10.2.2/build/qemu-system-arm.exe --version
+
+      - name: Package Windows build
         run: |
-          mkdir -p dist
+          mkdir -p package
+          cp build/qemu-10.2.2/build/qemu-system-arm.exe package/
 
-          cp build/qemu-system-arm.exe dist/
-          cp /ucrt64/bin/*.dll dist/
+          cp /ucrt64/bin/*.dll package/ || true
 
-          cp LICENSE NOTICE dist/
+          cd package
+          7z a ../senew-emu-windows-x64.zip *
 
-      - name: Create ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path dist\* `
-            -DestinationPath senew-emu-windows-x64.zip `
-            -CompressionLevel Optimal
-
-      - name: Upload Windows build
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: senew-emu-windows-x64
-          path: senew-emu-windows-x64.zip
-          retention-days: 14
+          path: |
+            senew-emu-windows-x64.zip

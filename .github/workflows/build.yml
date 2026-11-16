@@ -13,8 +13,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install dependencies
         run: |
@@ -33,7 +31,6 @@ jobs:
             libpcre2-dev \
             libffi-dev \
             libglib2.0-dev \
-            libmount-dev \
             libpixman-1-dev \
             ninja-build \
             meson
@@ -41,58 +38,22 @@ jobs:
       - name: Download QEMU
         run: |
           mkdir -p build
-          curl -L \
+          curl -fL --retry 3 \
             https://download.qemu.org/qemu-10.2.2.tar.xz \
-            -o build/qemu.tar.xz
+            -o build/qemu-10.2.2.tar.xz
 
-      - name: Extract QEMU
+      - name: Build W580 QEMU
         run: |
-          cd build
-          tar -xf qemu.tar.xz \
-            --exclude='qemu-10.2.2/roms/u-boot*' \
-            --exclude='qemu-10.2.2/roms/skiboot' \
-            --exclude='qemu-10.2.2/roms/edk2' \
-            --exclude='qemu-10.2.2/tests'
-
-      - name: Install W580 machine sources
-        run: |
-          cp qemu/hw/arm/w580.c build/qemu-10.2.2/hw/arm/
-          cp qemu/hw/arm/*.inc build/qemu-10.2.2/hw/arm/
-
-          grep -q "w580.c" build/qemu-10.2.2/hw/arm/meson.build || \
-            echo "system_ss.add(when: 'CONFIG_W580', if_true: files('w580.c'))" \
-            >> build/qemu-10.2.2/hw/arm/meson.build
-
-      - name: Configure QEMU
-        run: |
-          cd build/qemu-10.2.2
-
-          ../configure \
-            --target-list=arm-softmmu \
-            --enable-system \
-            --disable-user \
-            --disable-docs \
-            --disable-gtk \
-            --disable-sdl \
-            --disable-opengl \
-            --disable-vnc \
-            --disable-werror \
-            --enable-tools \
-            --prefix=/usr/local
-
-      - name: Build QEMU
-        run: |
-          cd build/qemu-10.2.2
-          ninja -C build -v
+          JOBS=2 NICE=0 QEMU_TAR=build/qemu-10.2.2.tar.xz \
+            scripts/build.sh
 
       - name: Check executable
         run: |
-          find build/qemu-10.2.2 -name "qemu-system-arm" -print
-          test -f build/qemu-10.2.2/build/qemu-system-arm
-          build/qemu-10.2.2/build/qemu-system-arm --version
+          ./build/qemu-system-arm --version
+          ./build/qemu-system-arm -M help | grep -i w580
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: senew-emu-linux-x64
-          path: build/qemu-10.2.2/build/qemu-system-arm
+          path: build/qemu-system-arm

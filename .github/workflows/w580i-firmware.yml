@@ -21,26 +21,50 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install build tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            make \
-            gcc \
-            g++ \
-            binutils \
+            gcc-arm-none-eabi \
+            binutils-arm-none-eabi \
             python3 \
             python3-pip \
             git
 
-      - name: Show build environment
+      - name: Check build tools
         run: |
           gcc --version
+          arm-none-eabi-gcc --version
+          arm-none-eabi-objcopy --version
           make --version
           python3 --version
 
-      - name: Run W580i Makefile
+      - name: Build W580 firmware
         working-directory: senew-w580-main
         run: |
-          make -j3 W580i
+          make -j3 w580 BT=0
+
+      - name: Verify firmware outputs
+        working-directory: senew-w580-main
+        run: |
+          test -s build/sistema.bin
+          test -s build/flash-w580.bin
+
+          echo "===== sistema.bin ====="
+          ls -lh build/sistema.bin
+
+          echo "===== flash-w580.bin ====="
+          ls -lh build/flash-w580.bin
+
+          python3 -c "import os; p='build/flash-w580.bin'; s=os.path.getsize(p); print('Flash size:', s, 'bytes'); assert s == 64*1024*1024, 'Flash image must be 64 MiB'"
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: senew-w580i-firmware
+          path: |
+            senew-w580-main/build/sistema.bin
+            senew-w580-main/build/flash-w580.bin
+          if-no-files-found: error
+          retention-days: 30

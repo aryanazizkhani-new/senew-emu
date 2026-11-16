@@ -69,7 +69,7 @@ jobs:
       - name: Download QEMU
         run: |
           mkdir -p build
-          curl -L \
+          curl -fL --retry 3 \
             https://download.qemu.org/qemu-10.2.2.tar.xz \
             -o build/qemu.tar.xz
 
@@ -106,6 +106,8 @@ jobs:
           unset PKG_CONFIG_PATH
 
           cd build/qemu-10.2.2
+          mkdir -p build
+          cd build
 
           ../configure \
             --target-list=arm-softmmu \
@@ -134,10 +136,9 @@ jobs:
 
       - name: Check executable
         run: |
-          find build/qemu-10.2.2 -name "qemu-system-arm.exe" -print
           test -f build/qemu-10.2.2/build/qemu-system-arm.exe
-
           build/qemu-10.2.2/build/qemu-system-arm.exe --version
+          build/qemu-10.2.2/build/qemu-system-arm.exe -M help | grep -i w580
 
       - name: Package Windows build
         run: |
@@ -153,5 +154,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: senew-emu-windows-x64
-          path: |
-            senew-emu-windows-x64.zip
+          path: senew-emu-windows-x64.zip

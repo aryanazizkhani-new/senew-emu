@@ -20,22 +20,31 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
             base-devel
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-glib2
-            mingw-w64-x86_64-pixman
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-python
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-zlib
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-libffi
+            mingw-w64-ucrt-x86_64-pcre2
+            curl
+            git
+            perl
+            diffutils
+            tar
+            xz
 
       - name: Download QEMU
         shell: msys2 {0}
@@ -49,7 +58,12 @@ jobs:
       - name: Extract and patch QEMU
         shell: msys2 {0}
         run: |
-          tar -xf qemu.tar.xz
+          tar \
+            --exclude="qemu-${QEMU_VERSION}/roms/u-boot*" \
+            --exclude="qemu-${QEMU_VERSION}/roms/skiboot" \
+            --exclude="qemu-${QEMU_VERSION}/roms/edk2" \
+            --exclude="qemu-${QEMU_VERSION}/tests" \
+            -xf qemu.tar.xz
 
           SRC="$PWD/qemu-${QEMU_VERSION}"
 
@@ -64,8 +78,6 @@ jobs:
       - name: Configure
         shell: msys2 {0}
         run: |
-          SRC="$PWD/qemu-${QEMU_VERSION}"
-
           mkdir build
           cd build
 
@@ -83,19 +95,11 @@ jobs:
             --disable-slirp \
             --disable-capstone \
             --disable-plugins \
-            --without-default-devices \
-            --audio-drv-list= \
-            --disable-kvm \
-            --disable-xen \
             --disable-curl \
             --disable-gnutls \
             --disable-curses \
             --disable-libusb \
             --disable-usb-redir \
-            --disable-vhost-user \
-            --disable-vhost-net \
-            --disable-vhost-kernel \
-            --disable-libssh \
             --disable-spice \
             --disable-png \
             --disable-vde \
@@ -121,20 +125,17 @@ jobs:
 
           cp build/qemu-system-arm.exe dist/
 
-          ldd build/qemu-system-arm.exe \
-            | sed -nE 's/.*=> ([^ ]+).*/\1/p' \
-            | while read -r dll; do
-                case "$dll" in
-                  /mingw64/bin/*)
-                    cp -n "$dll" dist/
-                    ;;
-                esac
-              done
+          cp /ucrt64/bin/*.dll dist/
 
           cp LICENSE NOTICE dist/
 
-          cd dist
-          7z a ../senew-emu-windows-x64.zip *
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path dist\* `
+            -DestinationPath senew-emu-windows-x64.zip `
+            -CompressionLevel Optimal
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4

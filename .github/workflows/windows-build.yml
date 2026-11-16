@@ -78,6 +78,16 @@ jobs:
       - name: Configure
         shell: msys2 {0}
         run: |
+          export CC=/ucrt64/bin/gcc
+          export CXX=/ucrt64/bin/g++
+          export AR=/ucrt64/bin/ar
+          export NM=/ucrt64/bin/nm
+          export STRIP=/ucrt64/bin/strip
+
+          export PKG_CONFIG=/ucrt64/bin/pkg-config
+          export PKG_CONFIG_LIBDIR=/ucrt64/lib/pkgconfig:/ucrt64/share/pkgconfig
+          unset PKG_CONFIG_PATH
+
           mkdir build
           cd build
 
@@ -124,7 +134,6 @@ jobs:
           mkdir -p dist
 
           cp build/qemu-system-arm.exe dist/
-
           cp /ucrt64/bin/*.dll dist/
 
           cp LICENSE NOTICE dist/

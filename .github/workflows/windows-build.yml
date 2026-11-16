@@ -160,11 +160,48 @@ jobs:
 
           cp /ucrt64/bin/*.dll package/ || true
 
-          cd package
-          7z a ../senew-emu-windows-x64.zip *
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          output = "senew-emu-windows-x64.zip"
+
+          with zipfile.ZipFile(
+              output,
+              "w",
+              compression=zipfile.ZIP_DEFLATED
+          ) as archive:
+              for file in Path("package").iterdir():
+                  if file.is_file():
+                      archive.write(file, arcname=file.name)
+
+          print(f"Created: {output}")
+          print(f"ZIP size: {Path(output).stat().st_size} bytes")
+          PY
+
+      - name: Verify ZIP
+        run: |
+          python - <<'PY'
+          import zipfile
+
+          path = "senew-emu-windows-x64.zip"
+
+          with zipfile.ZipFile(path, "r") as archive:
+              files = archive.namelist()
+              print("ZIP contents:")
+              for name in files:
+                  print(name)
+
+              assert "qemu-system-arm.exe" in files, \
+                  "QEMU executable is missing from ZIP!"
+
+          print("ZIP verification successful.")
+          PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: senew-emu-windows-x64
           path: senew-emu-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
